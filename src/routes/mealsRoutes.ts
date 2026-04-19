@@ -1,15 +1,16 @@
 import { FastifyInstance } from "fastify"
 import { knex } from "../database"
 import z from "zod"
+import { checkSessionIdExists } from "../middlewares/check-session-id-exists"
 
 
 
 export const mealsRoutes = (app: FastifyInstance) => {
-    app.post('/', async (request, reply) => {
+    app.post('/', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
         const payload = z.object({
             name: z.string(),
             isWithinDiet: z.boolean(),
-            description: z.string().optional(),
+            description: z.string(),
             userId: z.uuid(),
             date: z.coerce.date()
         })
@@ -27,46 +28,33 @@ export const mealsRoutes = (app: FastifyInstance) => {
         return reply.status(201).send()
     })
 
-    app.get('/user/:userId', async (request, reply) => {
-        const payload = z.object({
-            userId: z.uuid(),
-        })
-        const checkedParams = payload.safeParse(request.params)
-        if (checkedParams.error) {
-            await reply.status(400).send({ message: z.prettifyError(checkedParams.error) })
-            return
-        }
-        const { data: { userId } } = checkedParams
-        const isValidUser = await knex('users').select('*').where({ id: userId }).first()
-        if (!isValidUser) return reply.status(404).send({ message: "No user found" })
-
-        const list = await knex('meals').select('*').where({ user_id: userId })
-        return reply.status(200).send(list)
+    app.get('/', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
+        const mealsList = await knex('meals').select('*').where({ user_id: request.user.id })
+        return reply.status(200).send(mealsList)
     })
 
-    app.get('/:mealId', async (request, reply) => {
+    app.get('/:mealId', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
         const params = z.object({
             mealId: z.uuid()
         })
-        const payload = z.object({
-            userId: z.uuid()
-        })
+
         const checkedParams = params.safeParse(request.params)
-        const checkedPayload = payload.safeParse(request.body)
-        if (checkedParams.error || checkedPayload.error) {
-            const error = checkedParams.error ?? checkedPayload.error
-            await reply.status(400).send({ message: z.prettifyError(error!) })
+        if (checkedParams.error) {
+            await reply.status(400).send({ message: z.prettifyError(checkedParams.error) })
             return
         }
 
         const { data: { mealId } } = checkedParams
         const isValidMeal = await knex('meals').select('*').where({ id: mealId }).first()
         if (!isValidMeal) return reply.status(404).send({ message: 'Meal not found' })
-        const list = await knex('meals').select('*').where({ id: mealId })
-        return reply.status(200).send(list)
+        const meal = await knex('meals').select('*').where({ id: mealId, user_id: request.user.id }).first()
+        if (!meal) {
+            return reply.status(404).send('Meal not found   ')
+        }
+        return reply.status(200).send(meal)
     })
 
-    app.put('/:mealId', async (request, reply) => {
+    app.put('/:mealId', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
         const params = z.object({
             mealId: z.uuid()
         })
@@ -99,11 +87,16 @@ export const mealsRoutes = (app: FastifyInstance) => {
             }).filter(([_, value]) => value !== undefined)
         )
 
+        const meal = (await knex('meals').where({ id: mealId, user_id: request.user.id }).select("*"))
+        if (!meal.length) {
+            return reply.status(404).send("Meal not found.")
+        }
         await knex('meals').update(updateData).where({ id: mealId })
+
         return reply.status(204).send()
     })
 
-    app.get('/:userId/summary', async (request, reply) => {
+    app.get('/:userId/summary', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
         const params = z.object({
             userId: z.uuid()
         })
@@ -133,7 +126,7 @@ export const mealsRoutes = (app: FastifyInstance) => {
     })
 
 
-    app.delete('/:mealId', async (request, reply) => {
+    app.delete('/:mealId', { preHandler: [checkSessionIdExists] }, async (request, reply) => {
         const params = z.object({
             mealId: z.uuid()
         })
@@ -145,7 +138,7 @@ export const mealsRoutes = (app: FastifyInstance) => {
             return
         }
         const { data: { mealId } } = checkedParams
-        const mealExists = await knex('meals').select('*').where({ id: mealId }).first()
+        const mealExists = await knex('meals').select('*').where({ id: mealId, user_id: request.user.id }).first()
         if (!mealExists) {
             await reply.status(404).send("No meal found")
         }
