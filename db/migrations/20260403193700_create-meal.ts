@@ -1,16 +1,14 @@
 import type { Knex } from "knex";
 
+
 export async function up(knex: Knex): Promise<void> {
-    if (knex.client.config.client === 'sqlite3') {
-        await knex.raw(`
-            ALTER TABLE meals 
-            ADD COLUMN updated_at DATETIME
-        `)
-    } else {
-        await knex.schema.alterTable('meals', (table) => {
-            table.dateTime('updated_at').defaultTo(knex.fn.now())
-        })
-    }
+    await knex.schema.createTable('meals', (table) => {
+        table.uuid('id').defaultTo(knex.fn.uuid()).primary()
+        table.boolean('is_within_diet').notNullable()
+        table.text('description').notNullable()
+        table.uuid('user_id').references('users.id').notNullable()
+        table.date('date').notNullable()
+    })
 }
 
 

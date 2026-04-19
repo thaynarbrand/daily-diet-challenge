@@ -4,7 +4,9 @@ import type { Knex } from "knex";
 export async function up(knex: Knex): Promise<void> {
     await knex.schema.createTable('users', (table) => {
         table.uuid('id').defaultTo(knex.fn.uuid()).primary()
+        table.string('session_id').notNullable().unique()
         table.string('name').notNullable()
+        table.timestamps(true, true)
     })
 }
 
